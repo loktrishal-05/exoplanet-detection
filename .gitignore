@@ -20,3 +20,4 @@ node_modules/
 .claude/
 .opencode/
 .DS_Store
+dist/

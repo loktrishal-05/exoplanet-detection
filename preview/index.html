@@ -200,8 +200,23 @@ footer{color:var(--muted);font-size:11px;text-align:center;margin:28px 0 8px;let
       <a data-page="results" class="active">Results</a>
       <a data-page="browse">Browse</a>
       <a data-page="anomalies">Anomalies</a>
+      <a data-page="live">Live Model</a>
     </nav>
   </header>
+
+  <!-- ==================== LIVE MODEL (ONNX, in-browser) ==================== -->
+  <div class="page" id="page-live">
+    <div class="card">
+      <h3>🧠 Live Classifier <span class="mut">· XGBoost → ONNX · runs in your browser</span></h3>
+      <p class="hint">The trained model (13 physics features, isotonic-calibrated). No server involved. Presets are illustrative synthetic inputs, not real stars.</p>
+      <div id="liveBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
+      <div id="liveInputs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"></div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <button id="liveRun">Classify</button>
+        <div id="liveOut" class="hint" style="font-size:15px">Loading model…</div>
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== UPLOAD ==================== -->
   <div class="page" id="page-upload">
@@ -1001,6 +1016,41 @@ requestAnimationFrame(animate);
 window.__s3.resizeFn=()=>{const w=W();camera.aspect=w/H;camera.updateProjectionMatrix();
   renderer.setSize(w,H,false);composer.setSize(w,H)};
 addEventListener('resize',window.__s3.resizeFn);
+</script>
+<script>
+/* Live Model panel: ONNX Runtime Web + same isotonic calibration as models/xgboost_model.py */
+(function(){
+  const q=s=>document.querySelector(s); let M=null,sess=null,booted=false;
+  const out=q('#liveOut'), say=(t,c)=>{out.textContent=t;out.style.color=c||''};
+  const fmtv=v=>Math.abs(v)>=100||v===0?String(Math.round(v*100)/100):Number(v.toPrecision(4)).toString();
+  function iso(raw){const x=M.calibration.x,y=M.calibration.y;
+    if(raw<=x[0])return y[0]; if(raw>=x[x.length-1])return y[y.length-1];
+    let i=1;while(x[i]<raw)i++; const t=(raw-x[i-1])/(x[i]-x[i-1]);return y[i-1]+t*(y[i]-y[i-1]);}
+  function fill(vals){M.features.forEach((f,i)=>q('#live_'+f).value=fmtv(vals[i]));}
+  async function boot(){
+    if(booted)return;booted=true;
+    try{
+      M=await (await fetch('./model.json')).json();
+      q('#liveInputs').innerHTML=M.features.map(f=>`<label style="font-size:12px;color:var(--muted)">${f}<input id="live_${f}" type="number" step="any" style="width:100%;margin-top:3px;padding:7px 9px;border-radius:9px;border:1px solid var(--line2);background:rgba(5,8,20,.85);color:var(--text);font:inherit"></label>`).join('');
+      q('#liveBtns').innerHTML=Object.keys(M.presets).map(n=>`<button type="button" data-p="${n}">${n}</button>`).join('');
+      q('#liveBtns').onclick=e=>{const n=e.target.dataset.p;if(n){fill(M.presets[n].values);run();}};
+      await new Promise((ok,no)=>{const sc=document.createElement('script');
+        sc.src='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc);});
+      sess=await ort.InferenceSession.create('./xgb_planet.onnx');
+      fill(Object.values(M.presets)[0].values); run();
+    }catch(err){say('Live model unavailable here ('+err.message+'). Serve the built site: python scripts/build_site.py','var(--amber)');booted=false;}
+  }
+  async function run(){
+    if(!sess)return;
+    const v=M.features.map(f=>parseFloat(q('#live_'+f).value));
+    const x=Float32Array.from(v.map((a,i)=>Number.isFinite(a)?a:M.medians[i]));
+    const r=await sess.run({features:new ort.Tensor('float32',x,[1,x.length])});
+    const raw=r.probabilities.data[1], p=Math.min(1,Math.max(0,iso(raw))), ok=p>=M.threshold;
+    say((ok?'PLANET CANDIDATE':'FALSE POSITIVE')+' · calibrated P(planet) = '+p.toFixed(3)+' (raw '+raw.toFixed(3)+', threshold '+M.threshold+')',ok?'var(--green)':'var(--red)');
+  }
+  q('#liveRun').onclick=run;
+  document.querySelector('.nav a[data-page="live"]').addEventListener('click',boot);
+})();
 </script>
 </body>
 </html>
