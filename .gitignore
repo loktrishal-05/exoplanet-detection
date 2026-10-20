@@ -1,0 +1,22 @@
+# bulk / generated data (re-create with pipeline/ scripts)
+data/
+*.npy
+*.npz
+*.fits
+*.zip
+*.log
+models/saved_ablation/
+# pickles: load trusted JSON model instead
+*.pkl
+# python / node / env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+node_modules/
+# tooling & deploy state
+.netlify/
+.claude/
+.opencode/
+.DS_Store
